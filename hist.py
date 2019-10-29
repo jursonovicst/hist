@@ -13,18 +13,19 @@ parser.add_argument('--truncate', help="Truncate histogram range at +-3 sigma va
 parser.add_argument('--range', type=int, nargs=2, metavar=("LOW", "HIGH"),
                     help='Range of the histogram, defaults to the min/max values', default=[None, None])
 parser.add_argument('--interval', type=float, help='Refersh interval (in seconds) default=%(default)s', default=2)
+parser.add_argument('--percentiles', type=float, help='Percentiles to show', nargs='*')
 parser.add_argument('--width', type=int, help='Width of the bins, default=%(default)s', default=70)
 
 args = parser.parse_args()
 
 
-def updatehist(a, bins, truncate, low, high, interval, stopevent):
+def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
     """
     Timer callback function, restarts the timer and prints the histogram.
     """
     if not stopevent.isSet():
         # start a new timer
-        timerobject = Timer(interval, updatehist, args=[a, bins, truncate, low, high, interval, stopevent])
+        timerobject = Timer(interval, updatehist, args=[a, bins, truncate, low, high, percentiles, interval, stopevent])
         timerobject.start()
 
         # statistics
@@ -43,8 +44,19 @@ def updatehist(a, bins, truncate, low, high, interval, stopevent):
         # calculate histogram
         hist = np.histogram(a, bins, range=histrange)
 
+        # calculate percentiles
+        perc = []
+        if percentiles is not None:
+            perc = np.percentile(a, percentiles)
+        assert len(perc) == len(percentiles), "Len mismatch after creating percentiles: %s %s" % (perc, percentiles)
+
         # max value for normalization
         freqmax = np.max(hist[0])
+
+        # append percentiles
+        values = np.concatenate((hist[1][:-1], perc))
+        freqs = np.concatenate((hist[0], np.multiply(percentiles, -1)))
+        assert len(values) == len(freqs), "Len mismatch: %s %s %s %s" % (hist[1], values, hist[0], freqs)
 
         # padding of values to align bars
         padding = int(np.log10(hist[1].max()) + 1)
@@ -53,12 +65,21 @@ def updatehist(a, bins, truncate, low, high, interval, stopevent):
         print("%s___mu=%.2f___sigma=%.2f___min=%.0f___max=%.0f_" % (("_" * (padding + 2)), mu, sigma, minimum, maximum))
 
         # print histogram
-        for value, freq in zip(hist[1], hist[0]):
-            # index
-            sys.stdout.write(("%%%dd: " % padding) % value)
 
-            # bulks
-            sys.stdout.write("=" * (freq * 20 // freqmax))
+        # get argsort
+        p = values.argsort()
+
+        for value, freq in zip(values[p], freqs[p]):
+            if freq >= 0:
+                # index
+                sys.stdout.write(("%%%dd: " % padding) % value)
+
+                # bulks
+                sys.stdout.write("_" * int(freq * 20 // freqmax))
+            else:
+                # percentile
+                sys.stdout.write(
+                    (" " * (padding + 2)) + ("." * ((20 - 4) // 2)) + ("%2dth" % (freq * -1)) + ("." * ((20 - 4) // 2)))
 
             # newline
             sys.stdout.write('\n')
@@ -70,7 +91,8 @@ if __name__ == '__main__':
 
     # start a timer
     t = Timer(args.interval, updatehist,
-              args=[numbers, args.bins, args.truncate, args.range[0], args.range[1], args.interval, stop])
+              args=[numbers, args.bins, args.truncate, args.range[0], args.range[1], args.percentiles, args.interval,
+                    stop])
     t.start()
 
     # current write pointer in the circular buffer of numbers
