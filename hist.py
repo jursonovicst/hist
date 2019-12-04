@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2.7
 
 import numpy as np
 import argparse
@@ -44,18 +44,20 @@ def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
         # calculate histogram
         hist = np.histogram(a, bins, range=histrange)
 
-        # calculate percentiles
-        perc = []
-        if percentiles is not None:
-            perc = np.percentile(a, percentiles)
-        assert len(perc) == len(percentiles), "Len mismatch after creating percentiles: %s %s" % (perc, percentiles)
-
         # max value for normalization
         freqmax = np.max(hist[0])
 
-        # append percentiles
-        values = np.concatenate((hist[1][:-1], perc))
-        freqs = np.concatenate((hist[0], np.multiply(percentiles, -1)))
+        # calculate percentiles
+        values = hist[1][:-1]
+        freqs = hist[0]
+        if percentiles is not None:
+            perc = np.percentile(a, percentiles)
+            assert len(perc) == len(percentiles), "Len mismatch after creating percentiles: %s %s" % (perc, percentiles)
+
+            # append percentiles
+            values = np.concatenate(values, perc)
+            freqs = np.concatenate((freqs, np.multiply(percentiles, -1)))
+
         assert len(values) == len(freqs), "Len mismatch: %s %s %s %s" % (hist[1], values, hist[0], freqs)
 
         # padding of values to align bars
