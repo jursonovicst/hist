@@ -1,18 +1,17 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 
 import numpy as np
 import argparse
 from threading import Timer, Event
 import sys
 
-parser = argparse.ArgumentParser(
-    description='Print the histogram of numbers read numbers from stdin into a circular buffer.')
+parser = argparse.ArgumentParser(description='Print the histogram of numbers read over stdin.')
 parser.add_argument('--size', type=int, help='Size of the circular buffer, default=%(default)s', default=1000)
 parser.add_argument('--bins', type=int, help='Number of bins, default=%(default)s', default=10)
 parser.add_argument('--truncate', help="Truncate histogram range at +-3 sigma values", action='store_true')
-parser.add_argument('--range', type=int, nargs=2, metavar=("LOW", "HIGH"),
+parser.add_argument('--range', type=float, nargs=2, metavar=("LOW", "HIGH"),
                     help='Range of the histogram, defaults to the min/max values', default=[None, None])
-parser.add_argument('--interval', type=float, help='Refersh interval (in seconds) default=%(default)s', default=2)
+parser.add_argument('--interval', type=float, help='Refresh interval (in seconds) default=%(default)s', default=2)
 parser.add_argument('--percentiles', type=float, help='Percentiles to show', nargs='*')
 parser.add_argument('--width', type=int, help='Width of the bins, default=%(default)s', default=70)
 
@@ -64,7 +63,7 @@ def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
         padding = int(np.log10(hist[1].max()) + 1)
 
         # print header
-        print("%s___mu=%.2f___sigma=%.2f___min=%.0f___max=%.0f_" % (("_" * (padding + 2)), mu, sigma, minimum, maximum))
+        print(f"{' ' * (padding + 2)}   mu={mu:.2f}   sigma={sigma:.2f}   min={minimum:.0f}   max={maximum:.0f}")
 
         # print histogram
 
@@ -86,14 +85,18 @@ def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
             # newline
             sys.stdout.write('\n')
 
+        # move cursor back
+
+        print(f"\033[{len(values) + 2}A")
+
 
 if __name__ == '__main__':
-    numbers = np.zeros(args.size)
+    buffer = np.zeros(args.size)
     stop = Event()
 
     # start a timer
     t = Timer(args.interval, updatehist,
-              args=[numbers, args.bins, args.truncate, args.range[0], args.range[1], args.percentiles, args.interval,
+              args=[buffer, args.bins, args.truncate, args.range[0], args.range[1], args.percentiles, args.interval,
                     stop])
     t.start()
 
@@ -103,7 +106,7 @@ if __name__ == '__main__':
         # read inputs from stdin
         for line in sys.stdin:
             try:
-                numbers[ptr] = float(line)
+                buffer[ptr] = float(line)
                 ptr = (ptr + 1) % args.size
             except ValueError:
                 sys.stderr.write("Warning: non float value received: '%s'\n" % line.rstrip())
