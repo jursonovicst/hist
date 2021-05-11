@@ -12,36 +12,38 @@ parser.add_argument('--truncate', help="Truncate histogram range at +-3 sigma va
 parser.add_argument('--range', type=float, nargs=2, metavar=("LOW", "HIGH"),
                     help='Range of the histogram, defaults to the min/max values', default=[None, None])
 parser.add_argument('--interval', type=float, help='Refresh interval (in seconds) default=%(default)s', default=2)
-parser.add_argument('--percentiles', type=float, help='Percentiles to show', nargs='*')
-parser.add_argument('--width', type=int, help='Width of the bins, default=%(default)s', default=70)
+parser.add_argument('--percentiles', type=float,
+                    help='Percentiles to compute, which must be between 0 and 100 inclusive.', nargs='*')
+parser.add_argument('--width', type=int, help='Width of the bars, default=%(default)s', default=70)
 
 args = parser.parse_args()
 
 
-def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
+def updatehist(buffer, bins, truncate, low, high, percentiles, interval, stopevent, width):
     """
     Timer callback function, restarts the timer and prints the histogram.
     """
     if not stopevent.isSet():
         # start a new timer
-        timerobject = Timer(interval, updatehist, args=[a, bins, truncate, low, high, percentiles, interval, stopevent])
+        timerobject = Timer(interval, updatehist,
+                            args=[buffer, bins, truncate, low, high, percentiles, interval, stopevent, width])
         timerobject.start()
 
         # statistics
-        mu = np.mean(a)
-        sigma = np.std(a)
-        minimum = np.min(a)
-        maximum = np.max(a)
+        mu = np.mean(buffer)
+        sigma = np.std(buffer)
+        minimum = np.min(buffer)
+        maximum = np.max(buffer)
 
         # range of the histogram:
         #   - values in argument
-        #   - min/max of numbers
         #   - mu +-3sigma of numbers, if truncated
+        #   - min/max of numbers
         histrange = (low if low is not None else (max(minimum, mu - 3 * sigma) if truncate else minimum),
                      high if high is not None else (min(maximum, mu + 3 * sigma) if truncate else maximum))
 
         # calculate histogram
-        hist = np.histogram(a, bins, range=histrange)
+        hist = np.histogram(buffer, bins, range=histrange)
 
         # max value for normalization
         freqmax = np.max(hist[0])
@@ -50,12 +52,12 @@ def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
         values = hist[1][:-1]
         freqs = hist[0]
         if percentiles is not None:
-            perc = np.percentile(a, percentiles)
+            perc = np.percentile(buffer, percentiles)
             assert len(perc) == len(percentiles), "Len mismatch after creating percentiles: %s %s" % (perc, percentiles)
 
-            # append percentiles
-            values = np.concatenate(values, perc)
-            freqs = np.concatenate((freqs, np.multiply(percentiles, -1)))
+            # append percentiles, use negative sign for marking mark
+            values = np.concatenate([values, perc])
+            freqs = np.concatenate([freqs, np.multiply(percentiles, -1)])
 
         assert len(values) == len(freqs), "Len mismatch: %s %s %s %s" % (hist[1], values, hist[0], freqs)
 
@@ -76,11 +78,12 @@ def updatehist(a, bins, truncate, low, high, percentiles, interval, stopevent):
                 sys.stdout.write(("%%%dd: " % padding) % value)
 
                 # bulks
-                sys.stdout.write("_" * int(freq * 20 // freqmax))
+                barwidth = int(freq * width // freqmax)
+                sys.stdout.write("▄" * barwidth + " " * (width-barwidth))
             else:
                 # percentile
                 sys.stdout.write(
-                    (" " * (padding + 2)) + ("." * ((20 - 4) // 2)) + ("%2dth" % (freq * -1)) + ("." * ((20 - 4) // 2)))
+                    (" " * (padding + 2)) + ("." * ((width - 4) // 2)) + ("%gth" % (freq * -1)) + ("." * ((width - 4) // 2)))
 
             # newline
             sys.stdout.write('\n')
@@ -97,7 +100,7 @@ if __name__ == '__main__':
     # start a timer
     t = Timer(args.interval, updatehist,
               args=[buffer, args.bins, args.truncate, args.range[0], args.range[1], args.percentiles, args.interval,
-                    stop])
+                    stop, args.width])
     t.start()
 
     # current write pointer in the circular buffer of numbers
